@@ -123,204 +123,152 @@ std::istream &operator>>(std::istream &in, Queue &queue) {
     return in;
 }
 
-/*
- *Идея данной реализации данного списка следующая:
- *Односвязный список состоит из Нод, в которых указан адрес следующего элемента.
- * Если размещать ноды в массиве, то в принципе какая разница, в какую ячейку добавлять, если список будет работать по своей
- * внутренней адресации. Следовательно, что добавление в начало списка, что в конец, можно осуществить просто вставив Ноду
- * в следующую свободную ячейку массива, а удаление можно осуществить, просто исключив адрес элемента из внутренней адресации списка.
- *
- * Чтобы постоянно е расширять массив при добавлении нового элемента, предусмотренно capacity, при добавлении первого элемента
- * - оно составляет 10 после заполнения массив перезаписывается в новый с удвоенным capacity.
- *
- * Встаёт проблема, если постоянно добавлять новые элементы списка в следующую ячейку массива, а удалять из произвольных мест, то в скором времени
- * образуется множество не заполненных мест в массиве.
- *
- * Решение: Буфер на основе ранее реализованной очереди.
- * Принцип работы:
- * При создании первого элемента массива, равно как и при изменении размера, индексы не задействованных элементом массива, помещаются в очередь - операцией PushBack.
- * Таким образом в начале очереди, элементы будут доступны в правильном порядке.
- * При добавлении нового элемента его индекс берётся из первого элемента буфера с последующим его удалением при помощи функции очереди ExtractFirst.
- * При удалении элемента, его индекс добавляется в буфер, в начало очереди, для того чтобы пробел в массиве, был как можно скорее заполнен новым элементом.
- *
- * Для работы списка на основе массива, вместо адресов в памяти - используются индексы в массиве.
- */
 
+/*Список на основе массива, в этот раз более правдоподобный.
+ * В данном классе, используется только массив и переменные для хранения размеров и индексов.
+ * Работа с индексами ведётся таким образом, что массив по сути - закольцован.
+ * */
 class L1List{
 private:
     int head = -1;
     int current = -1;
     int tail = -1;
     int size = 0;
-    int capacity = 0;
-    Queue bufer;
+    int capacity = 10;
+    int* array = nullptr;
 
-    class Node{
-    public:
-        // Конструктор по умолчанию, для создания ссылок на Ноды.
-        Node(){
-            it = 0;
-            next = 0;
-            data = 0;
-        };
-        // Конструктор принимающий только данные
-        Node(int _data){
-            data = _data;
-        }
-        // Конструктор принимающий индексы на текущий элемент и на следующий.
-        Node(int _it, int _next): Node(data){
-            it = _it;
-            next = _next;
-        }
-        int it;
-        int next;
-        int data;
-    };
-
-    //Ссылка на массив Нод, так как мы не сразу вносим элементы, не стоит забивать память до первого элемента.
-    Node *array = nullptr;
-    //Функция первого объявления массива
-    void NewArray(){
-        capacity = 10;
-        array = new Node[capacity];
-        for (int i = 1; i < capacity ; ++i) {
-            bufer.PushBack(i);
+    //Изменение размера массива, если массива ещё нет, он создаётся, если есть - создаётся новый, вдвое больше
+    //данные переносятся в том же парядке что и в списке.
+    void ReSize(){
+        if (!size){
+            array = new int[capacity];
+            head = tail = current = 0;
+        }else{
+            capacity *= 2;
+            int* temp = new int [capacity];
+            //Для того чтобы данные записывались в новый массив правильным образом, то-есть head соответствовал нулевому элементу массива
+            //В новый массив записываем данные начиная с 0, в текущем массиве назначаем переменной j индекс головного элемента списка,
+            //чтобы получить нужный элемент, берём остаток от деления текущего элемента на capacity.
+            //Если индекс j не превышает capacity - то остатком от деления, будет тот же индекс.
+            //Если индекс j превышает capacity - то остатком от деления, даст индекс из начала массива.
+            for (int i = 0, j = head; i < size; ++i, ++j) {
+                temp[i] = array[(j%size)];
+            }
+            delete[] array;
+            array = temp;
+            current = head = 0;
+            tail = (size -1);
         }
     }
-    // Функция меняющая размер массива - просто переписывает все элементы массива в массив большего размера.
-    void Resize(){
-        int addInBufer = capacity+1;
-        capacity *=2;
-        Node* temp = new Node[capacity];
-        for (int i = 0; i < capacity; ++i) {
-            temp[i] = array[i];
-        }
+    void DeleteLastElem(){
         delete[] array;
-        array = temp;
-        for (int i = addInBufer; i < capacity ; ++i) {
-            bufer.PushBack(i);
-        }
+        head = -1;
+        current = -1;
+        tail = -1;
+        size = 0;
+        capacity = 10;
+        array = nullptr;
     }
 
 public:
     void PushBack(int data){
-        //Проверка на наличие элементов в массиве
-        if (head < 0){
-            NewArray();
-            head = tail = 0;
-            array[head].data = data;
-            array[head].it = 0;
-            array[head].next = 0;
-            ++size;
-            return;
-        }else if (size == capacity){ // Проверка на заполненность массива, при переполнении - увеличивает размер.
-            Resize();
+        // Если Лист пуст, или заполнен, изменяем размер массива.
+        if (!size || (size + 1) > capacity){
+            ReSize();
         }
-        // Добавление элемента по сути аналогично добавлению в обычный список
-        int elem = bufer.ExtractFirst(); // Берём свободный элемент из буфера.
-        array[tail].next = elem;
-        array[elem].it = elem;
-        array[elem].next = elem;
-        array[elem].data = data;
-        tail = elem;
-        ++size;
+        // При создании нового массива, текущий элемент по умолчанию равен 0ж
+        if (size){
+            current = tail+1;
+        }
+        // Если текущий элемент больше или равен capacity, то переносим его в начало массива - установив его равным остатку от деления
+        // самого себя на capacity. Проверка на то, является ли следующий элемент началом списка - не требуется, поскольку это может произойти только
+        // при size > capacity, но если это так, то размер массива будет изменён до этой проверки, а новый элемент будет добавлен на позицию (capacity|2)+1
+        if (current >= capacity){
+            current %= capacity;
+        }
 
-    };
+        array[current] = data;
+        tail = current;
+        ++size;
+    }
+
     void PushFront(int data){
-        if (head < 0){
-            NewArray();
-            head = tail = 0;
-            array[head].data = data;
-            array[head].it = 0;
-            array[head].next = 0;
-            ++size;
-            return;
-        }else if (size == capacity){
-            Resize();
+        if (!size || (size + 1) > capacity){
+            ReSize();
         }
-        int elem = bufer.ExtractFirst();
-        array[elem].next = head;
-        array[elem].it = elem;
-        array[elem].data = data;
-        head = elem;
-        ++size;
-    };
-    void PopBack(){
-        //Проверка на пустоту
-        if (head < 0){
-            std::cout << "L1list is empty" << std::endl;
-            return;
-        }
-        //Проверка на последний элемент, при удалении последнего элемента, массив удаляется, параметры приводятся в исходное состояние.
-        if (head == tail){
-            delete[] array;
-            head = -1;
-            current = -1;
-            tail = -1;
-            size = 0;
-            capacity = 0;
-            bufer.Clear();
-        }else{
-            current = head;
-            while (array[current].next != tail){ // Ищем предпоследний элемент
-                current = array[current].next;
-            }
-            bufer.PushFront(tail); //Отправляем последний элемент в начало очереди буфера.
-            tail = current;
-            array[current].next = current;
-            --size;
+        if (size){
+            current = head-1;
         }
 
-    };
-    void PopFront(){
-        if (head < 0){
-            std::cout << "L1list is empty" << std::endl;
+        if (current < 0){
+            current = (capacity - 1);
+        }
+
+        array[current] = data;
+        head = current;
+        ++size;
+    }
+
+    void PopBack(){
+        if (!(size - 1)){
+            DeleteLastElem();
             return;
         }
-        if (head == tail){
-            delete[] array;
-            head = -1;
-            current = -1;
-            tail = -1;
-            size = 0;
-            capacity = 0;
-            bufer.Clear();
+        array[tail] = 0;
+        current = (tail-1);
+        // Если предыдущий элемент меньше 0, то он выходит за рамки массива, следовательно, отправляем его в конец массива.
+        if (current < 0){
+            tail = capacity - 1;
+            --size;
         }else{
-            current = head;
-            head = array[head].next;
-            bufer.PushFront(current);
+            --tail;
             --size;
         }
-    };
-    void Show(){
-        current = head;
-        int count = 0;
-        if (head < 0){
-            std::cout << "L1list is empty" << std::endl;
+    }
+
+    void  PopFront(){
+        if (!(size - 1)){
+            DeleteLastElem();
             return;
         }
-        while(count < size){
-            std::cout << array[current].data << "\t";
-            current = array[current].next;
-            ++count;
+        // Если следующий элемент массива выходит за его пределы, делаем head - первый элемент массива.
+        array[head] = 0;
+        if ((head + 1) >= capacity){
+            head = 0;
+            --size;
+        } else{
+            ++head;
+            --size;
+        }
+    }
+
+    void Clear(){
+        while(size){
+            PopFront();
+        }
+    }
+
+    void ShowList(){
+        if(!size){
+            std::cout << "List is Empty!" << std::endl;
+            return;
+        }
+        for (int i = 0, j = head; i < size; ++i, ++j) {
+            std::cout << array[(j%capacity)] << "\t";
         }
         std::cout << std::endl;
     }
-    void GetSize(){
-        std::cout << size << std::endl;
-    }
-    void GetCapacity(){
-        std::cout << capacity << std::endl;
-    }
-    void ShowArray(){
-        for (int i = 0; i < capacity; ++i) {
-            std::cout << "Index = " << i << "\t" << "Object in array\t  Data: " << array[i].data << "\t Next element: " << array[i].next << std::endl;
-        }
-    }
-    void ShowBufer(){
-        bufer.Show();
-    }
 
+    void ShowArray(){
+        if(!size){
+            std::cout << "List is Empty!" << std::endl;
+            return;
+        }
+        for (int i = 0; i < capacity; ++i) {
+            std::cout << array[i] << "\t";
+        }
+        std::cout << std::endl;
+    }
 
 };
 /*
@@ -337,32 +285,28 @@ void Split(const L1List<int>& list, L2Queue<int>& queue1, L2Queue<int>& queue2){
 
 int main() {
 L1List list;
-list.PushBack(10);
 list.PushBack(11);
-list.PushBack(12);
-list.PushBack(13);
-list.PushBack(14);
-list.PushBack(15);
-list.Show();
-list.PushFront(9);
-list.PushFront(8);
-list.PushFront(7);
-list.PushFront(6);
-list.PushFront(5);
-list.Show();
-list.GetSize();
-list.GetCapacity();
+list.PushFront(13);
+list.PushFront(19);
+list.PushBack(42);
+list.PushBack(133);
+list.PushFront(189);
+list.PushFront(1329);
+list.PushBack(742);
+list.PushBack(444);
+list.PushBack(555);
+
+
+list.ShowList();
+list.ShowArray();
+
+std::cout << "--------------------------------------------------" << std::endl;
 list.PopBack();
 list.PopFront();
-list.Show();
-list.GetSize();
-list.GetCapacity();
+
+list.Clear();
+
+list.ShowList();
 list.ShowArray();
-list.ShowBufer();
-list.PushBack(99999);
-list.Show();
-list.GetSize();
-list.GetCapacity();
-list.ShowArray();
-list.ShowBufer();
+
 }
